@@ -34,7 +34,6 @@ const EditProfile = () => {
                     'Content-Type': 'multipart/form-data',
                 },
             });
-            setUser(response.data);
         } catch (error) {
             console.error('Error updating profile:', error);
         }

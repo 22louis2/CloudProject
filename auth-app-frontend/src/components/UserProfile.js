@@ -3,45 +3,49 @@ import { AuthContext } from "../context/AuthContext";
 import axios from "axios";
 
 const UserProfile = () => {
-    const { user, setUser } = useContext(AuthContext);
+    const { user } = useContext(AuthContext);
     const [formData, setFormData] = useState({
         email: "",
         name: "",
         filename: "",
         contentType: "",
-        profileImage: "" // Stores the current image URL
+        profileImage: "",
+        file: null // ✅ Store the actual file object
     });
     const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     // Default placeholder image
     const placeholderImage = "https://via.placeholder.com/150?text=No+Image";
 
+    const fetchUserProfile = async () => {
+        try {
+            const token = user?.token;
+            if (!token) return;
+
+            const response = await axios.get(
+                "https://drsf1zojgj.execute-api.us-east-1.amazonaws.com/prod/api/user",
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            setFormData({
+                email: response.data.email || "",
+                name: response.data.name || "",
+                filename: response.data.filename || "",
+                contentType: response.data.contentType || "",
+                profileImage: response.data.profileImage || "",
+                file: null // Reset file on load
+            });
+        } catch (error) {
+            console.error("Error fetching user profile:", error);
+        }
+    };
+
     useEffect(() => {
-        const fetchUserProfile = async () => {
-            try {
-                const token = localStorage.getItem("authToken");
-                const response = await axios.get(
-                    "https://drsf1zojgj.execute-api.us-east-1.amazonaws.com/prod/api/user",
-                    {
-                        headers: { Authorization: `Bearer ${token}` }
-                    }
-                );
-
-                setUser(response.data);
-                setFormData({
-                    email: response.data.email || "",
-                    name: response.data.name || "",
-                    filename: response.data.filename || "",
-                    contentType: response.data.contentType || "",
-                    profileImage: response.data.profileImage || ""
-                });
-            } catch (error) {
-                console.error("Error fetching user profile:", error);
-            }
-        };
-
         fetchUserProfile();
-    }, [setUser]);
+    }, [user?.token]);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
@@ -49,21 +53,29 @@ const UserProfile = () => {
             setFormData({
                 ...formData,
                 filename: file.name,
-                contentType: file.type
+                contentType: file.type,
+                file: file // ✅ Store actual file object
             });
         }
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        try {
-            const token = localStorage.getItem("authToken");
+        setLoading(true);
 
-            if (!formData.filename || !formData.contentType) {
+        try {
+            const token = user?.token;
+            if (!token) {
+                alert("Authentication error. Please log in again.");
+                return;
+            }
+
+            if (!formData.file) {
                 alert("Please select an image before saving.");
                 return;
             }
 
+            // Step 1: Request a signed upload URL from the API
             const response = await axios.patch(
                 "https://drsf1zojgj.execute-api.us-east-1.amazonaws.com/prod/api/user",
                 {
@@ -78,23 +90,37 @@ const UserProfile = () => {
                 }
             );
 
-            console.log("Profile updated successfully:", response.data);
+            console.log("Profile update API response:", response.data);
 
-            // Update profile image with the new uploadURL
-            setFormData((prev) => ({
-                ...prev,
-                profileImage: response.data.uploadURL
-            }));
+            // Step 2: If we received an upload URL, upload the actual file to S3
+            if (response.data.uploadURL) {
+                await uploadImageToS3(response.data.uploadURL, formData.file);
+            }
 
-            setUser((prev) => ({
-                ...prev,
-                profileImage: response.data.uploadURL
-            }));
+            // Step 3: Fetch updated user data after the image is uploaded
+            await fetchUserProfile(); // ✅ Get the correct image URL after upload
 
             setIsEditing(false);
         } catch (error) {
             console.error("Error updating profile:", error);
             alert("Failed to update profile. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ✅ Function to upload the actual image file to S3
+    const uploadImageToS3 = async (uploadURL, file) => {
+        try {
+            await axios.put(uploadURL, file, {
+                headers: {
+                    "Content-Type": file.type
+                }
+            });
+            console.log("Image uploaded successfully to S3!");
+        } catch (error) {
+            console.error("Error uploading image to S3:", error);
+            alert("Failed to upload profile image. Please try again.");
         }
     };
 
@@ -128,7 +154,9 @@ const UserProfile = () => {
                 <br />
                 {isEditing ? (
                     <>
-                        <button type="submit">Save</button>
+                        <button type="submit" disabled={loading}>
+                            {loading ? "Saving..." : "Save"}
+                        </button>
                         <button type="button" onClick={() => setIsEditing(false)}>
                             Cancel
                         </button>

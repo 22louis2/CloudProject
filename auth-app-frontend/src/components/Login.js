@@ -21,6 +21,7 @@ const Login = () => {
             login(response.data);
             navigate('/profile'); // Navigate to profile after login
         } catch (error) {
+            alert("Incorrect credentials");
             console.error('Login failed:', error);
         }
     };
