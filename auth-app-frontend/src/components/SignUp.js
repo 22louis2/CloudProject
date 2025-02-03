@@ -10,7 +10,32 @@ const SignUp = () => {
         profileImage: null
     });
     const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState({}); // State for errors
     const navigate = useNavigate();
+
+    const validateForm = () => {
+        const newErrors = {};
+
+        if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+            newErrors.email = "Please enter a valid email address.";
+        }
+
+        if (!formData.password || !/^(?=.*[!@#$%^&*])(?=.{8,})/.test(formData.password)) {
+            newErrors.password = "Password must be at least 8 characters long and include at least one special character.";
+        }
+
+        if (!formData.name || formData.name.trim() === "") {
+            newErrors.name = "Please enter your name.";
+        }
+
+        if (formData.profileImage && !formData.profileImage.type.startsWith("image/")) {
+            newErrors.profileImage = "Please upload a valid image file (JPEG, PNG).";
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
 
     const handleChange = (e) => {
         if (e.target.name === "profileImage") {
@@ -22,9 +47,10 @@ const SignUp = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!validateForm()) return; // Validate before submission
+
         setLoading(true);
         try {
-            // Step 1: Call signup API to get the signed upload URL
             const signupData = {
                 email: formData.email,
                 password: formData.password,
@@ -40,28 +66,19 @@ const SignUp = () => {
             );
 
             if (response.status === 201) {
-                console.log("Signup successful!", response.data);
-
-                // Step 2: If a profile image was selected, upload it to S3
                 if (formData.profileImage && response.data.uploadURL) {
                     await uploadImageToS3(response.data.uploadURL, formData.profileImage);
                 }
-
-                // Step 3: Redirect to login after successful signup
                 navigate("/login");
-            } else {
-                console.error("Unexpected response:", response);
-                alert("Something went wrong. Please try again.");
             }
         } catch (error) {
             console.error("Error signing up:", error);
-            alert(error.response?.data?.message || "Signup failed. Please try again.");
+            setErrors({ submit: error.response?.data?.message || "Signup failed. Please try again." }); // Set error message
         } finally {
             setLoading(false);
         }
     };
 
-    // Function to upload the image to S3 using a PUT request
     const uploadImageToS3 = async (uploadURL, file) => {
         try {
             await axios.put(uploadURL, file, {
@@ -69,22 +86,30 @@ const SignUp = () => {
                     "Content-Type": file.type
                 }
             });
-            console.log("Image uploaded successfully to S3!");
         } catch (error) {
             console.error("Error uploading image to S3:", error);
-            alert("Failed to upload profile image. Please try again.");
+            setErrors({ submit: "Failed to upload profile image. Please try again." }); // Set error message
         }
     };
 
     return (
         <form onSubmit={handleSubmit}>
-            <input type="email" name="email" placeholder="Email" onChange={handleChange} required />
-            <input type="password" name="password" placeholder="Password" onChange={handleChange} required />
-            <input type="text" name="name" placeholder="Name" onChange={handleChange} required />
-            <input type="file" name="profileImage" onChange={handleChange} />
+            <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} required />
+            {errors.email && <p className="error">{errors.email}</p>}
+
+            <input type="password" name="password" placeholder="Password" value={formData.password} onChange={handleChange} required />
+            {errors.password && <p className="error">{errors.password}</p>}
+
+            <input type="text" name="name" placeholder="Name" value={formData.name} onChange={handleChange} required />
+            {errors.name && <p className="error">{errors.name}</p>}
+
+            <input type="file" name="profileImage" onChange={handleChange} accept="image/*" />
+            {errors.profileImage && <p className="error">{errors.profileImage}</p>}
+
             <button type="submit" disabled={loading}>
                 {loading ? "Signing Up..." : "Sign Up"}
             </button>
+            {errors.submit && <p className="error">{errors.submit}</p>}
         </form>
     );
 };
